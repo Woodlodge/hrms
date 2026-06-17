@@ -364,7 +364,7 @@ def get_existing_half_day_attendance(employee, attendance_date):
 	return None
 
 
-def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type, break_times = None):
+def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type, break_times = None, rounding_rules = None):
 	"""Given a set of logs in chronological order calculates the total working hours based on the parameters.
 	Zero is returned for all invalid cases.
 
@@ -380,15 +380,13 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type, br
 			out_time = logs[-1].time
 		if working_hours_calc_type == "First Check-in and Last Check-out":
 			# assumption in this case: First log always taken as IN, Last log always taken as OUT
-			total_hours = time_diff_in_hours(in_time, logs[-1].time)
-			if break_times:
-				total_hours -= get_unpaid_break_hours(in_time, logs[-1].time, break_times)
+			total_hours = time_diff_in_hours_with_rounding_and_breaks(in_time, logs[-1].time, True, True, rounding_rules, break_times)
 		elif working_hours_calc_type == "Every Valid Check-in and Check-out":
 			logs = logs[:]
+			in_is_first = True
 			while len(logs) >= 2:
-				total_hours += time_diff_in_hours(logs[0].time, logs[1].time)
-				if break_times:
-					total_hours -= get_unpaid_break_hours(logs[0].time, logs[1].time, break_times)
+				total_hours += time_diff_in_hours_with_rounding_and_breaks(logs[0].time, logs[1].time, in_is_first, len(logs) == 2, rounding_rules, break_times)
+				in_is_first = False
 				del logs[:2]
 
 	elif check_in_out_type == "Strictly based on Log Type in Employee Checkin":
@@ -404,20 +402,18 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type, br
 			in_time = getattr(first_in_log, "time", None)
 			out_time = getattr(last_out_log, "time", None)
 			if first_in_log and last_out_log:
-				total_hours = time_diff_in_hours(in_time, out_time)
-				if break_times:
-					total_hours -= get_unpaid_break_hours(in_time, out_time, break_times)
+				total_hours = time_diff_in_hours_with_rounding_and_breaks(in_time, out_time, True, True, rounding_rules, break_times)
 		elif working_hours_calc_type == "Every Valid Check-in and Check-out":
+			in_is_first = True
 			in_log = out_log = None
 			for log in logs:
 				if in_log and out_log:
 					if not in_time:
 						in_time = in_log.time
 					out_time = out_log.time
-					total_hours += time_diff_in_hours(in_log.time, out_log.time)
-					if break_times:
-						total_hours -= get_unpaid_break_hours(in_log.time, out_log.time, break_times)
+					total_hours += time_diff_in_hours_with_rounding_and_breaks(in_log.time, out_log.time, in_is_first, False, rounding_rules, break_times)
 					in_log = out_log = None
+					in_is_first = False
 				if not in_log:
 					in_log = log if log.log_type == "IN" else None
 					if in_log and not in_time:
@@ -427,9 +423,7 @@ def calculate_working_hours(logs, check_in_out_type, working_hours_calc_type, br
 
 			if in_log and out_log:
 				out_time = out_log.time
-				total_hours += time_diff_in_hours(in_log.time, out_log.time)
-				if break_times:
-					total_hours -= get_unpaid_break_hours(in_log.time, out_log.time, break_times)
+				total_hours += time_diff_in_hours_with_rounding_and_breaks(in_log.time, out_log.time, in_is_first, True, rounding_rules, break_times)
 
 	return total_hours, in_time, out_time
 
@@ -491,7 +485,6 @@ def calculate_time_difference(start_time, end_time):
 
 	return round(time_difference.total_seconds() / 3600, 2)
 
-
 def get_unpaid_break_hours(in_datetime, out_datetime, break_times):
 	unpaid_break_hours = 0
 	in_time = get_time(in_datetime)
@@ -506,3 +499,59 @@ def get_unpaid_break_hours(in_datetime, out_datetime, break_times):
 				unpaid_break_hours += time_diff_in_hours(overlap_start, overlap_end)
 
 	return unpaid_break_hours
+
+def time_diff_in_hours_with_rounding_and_breaks(in_datetime, out_datetime, in_is_first: bool, out_is_last: bool, rounding_rules = None, break_times = None):
+	total_hours = 0
+
+	rounded_in_datetime = in_datetime
+	rounded_out_datetime = out_datetime
+
+	if rounding_rules is None or len(rounding_rules) == 0:
+		total_hours = round(float((out_datetime - in_datetime).total_seconds()) / 3600, 2)
+	else:
+		in_time = get_time(in_datetime)
+		out_time = get_time(out_datetime)
+		for rounding_rule in rounding_rules:
+			rounding_from = get_time(rounding_rule.from_time)
+			rounding_to = get_time(rounding_rule.to_time)
+			if ((rounding_rule.start and in_is_first) or rounding_rule.mid_in) and in_time >= rounding_from and in_time <= rounding_to and rounding_rule.unit > 0:
+				old_minutes = in_time.minute
+				units_of_rounded_minutes =  int(old_minutes / rounding_rule.unit)
+				leftover_minutes =  old_minutes % rounding_rule.unit
+
+				if leftover_minutes >= rounding_rule.point:
+					units_of_rounded_minutes += 1
+				
+				new_minutes = units_of_rounded_minutes * rounding_rule.unit
+				add_hours = 0
+				if new_minutes >= 60:
+					add_hours = int(new_minutes / 60)
+					new_minutes = int(new_minutes % 60)
+					
+				rounded_in_datetime = in_datetime.replace(minute=new_minutes, second=0, microsecond=0) + timedelta(hours=add_hours)
+
+			if ((rounding_rule.end and out_is_last) or rounding_rule.mid_out) and out_time >= rounding_from and out_time <= rounding_to and rounding_rule.unit > 0:
+				old_minutes = out_time.minute
+				units_of_rounded_minutes =  int(old_minutes / rounding_rule.unit)
+				leftover_minutes =  old_minutes % rounding_rule.unit
+
+				if leftover_minutes >= rounding_rule.point:
+					units_of_rounded_minutes += 1
+				
+				new_minutes = units_of_rounded_minutes * rounding_rule.unit
+				add_hours = 0
+				if new_minutes >= 60:
+					add_hours = int(new_minutes / 60)
+					new_minutes = int(new_minutes % 60)
+
+				rounded_out_datetime = out_datetime.replace(minute=new_minutes, second=0, microsecond=0) + timedelta(hours=add_hours)
+
+		total_hours = round(float((rounded_out_datetime - rounded_in_datetime).total_seconds()) / 3600, 2)
+
+	if break_times is None or len(break_times) == 0:
+		return total_hours
+
+	unpaid_break_hours = get_unpaid_break_hours(rounded_in_datetime, rounded_out_datetime, break_times)
+
+	return total_hours - unpaid_break_hours
+

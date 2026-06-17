@@ -10,12 +10,15 @@
   "start_time",
   "end_time",
   "enable_break_times",
+  "enable_rounding_rules",
   "column_break_3",
   "holiday_list",
   "color",
   "enable_auto_attendance",
   "breaks_settings_section",
   "break_times",
+  "rounding_settings_section",
+  "rounding_rules",
   "auto_attendance_settings_section",
   "determine_check_in_and_check_out",
   "working_hours_calculation_based_on",
@@ -230,10 +233,30 @@
    "label": "Overtime Type",
    "mandatory_depends_on": "eval:doc.allow_overtime == 1",
    "options": "Overtime Type"
+  },
+  {
+   "depends_on": "enable_rounding_rules",
+   "fieldname": "rounding_settings_section",
+   "fieldtype": "Section Break",
+   "label": "Rounding"
+  },
+  {
+   "depends_on": "enable_rounding_rules",
+   "fieldname": "rounding_rules",
+   "fieldtype": "Table",
+   "label": "Rules",
+   "options": "Shift Type Rounding"
+  },
+  {
+   "default": "0",
+   "description": "Set rounding rules for clock in and clock out times. Minimum wage employees should not be rounded down.",
+   "fieldname": "enable_rounding_rules",
+   "fieldtype": "Check",
+   "label": "Enable Rounding"
   }
  ],
  "links": [],
- "modified": "2025-12-16 16:32:49.169920",
+ "modified": "2026-06-22 11:52:31.203042",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Shift Type",
