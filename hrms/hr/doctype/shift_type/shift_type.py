@@ -233,8 +233,13 @@ class ShiftType(Document):
 		2. Logs are in chronological order
 		"""
 		late_entry = early_exit = False
+
+		break_times = None
+		if self.enable_break_times:
+			break_times = self.break_times
+
 		total_working_hours, in_time, out_time = calculate_working_hours(
-			logs, self.determine_check_in_and_check_out, self.working_hours_calculation_based_on
+			logs, self.determine_check_in_and_check_out, self.working_hours_calculation_based_on, break_times
 		)
 		if (
 			cint(self.enable_late_entry_marking)
