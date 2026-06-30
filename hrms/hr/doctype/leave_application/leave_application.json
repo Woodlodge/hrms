@@ -32,6 +32,7 @@
   "column_break_18",
   "posting_date",
   "status",
+  "decision_reason",
   "sb_other_details",
   "salary_slip",
   "color",
@@ -249,6 +250,11 @@
    "fieldname": "sb_other_details",
    "fieldtype": "Section Break",
    "label": "Other Details"
+  },
+  {
+   "fieldname": "decision_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
   }
  ],
  "icon": "fa fa-calendar",
@@ -256,7 +262,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2026-06-30 17:04:24.745868",
+ "modified": "2026-06-30 17:05:52.948207",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Leave Application",
