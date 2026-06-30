@@ -79,6 +79,7 @@ class LeaveApplication(Document, PWANotificationsMixin):
 		amended_from: DF.Link | None
 		color: DF.Color | None
 		company: DF.Link
+		decision_reason: DF.SmallText | None
 		department: DF.Link | None
 		description: DF.SmallText | None
 		employee: DF.Link

@@ -33,6 +33,7 @@
   "column_break_18",
   "posting_date",
   "status",
+  "decision_reason",
   "sb_other_details",
   "salary_slip",
   "color",
@@ -250,6 +251,11 @@
    "fieldname": "sb_other_details",
    "fieldtype": "Section Break",
    "label": "Other Details"
+  },
+  {
+   "fieldname": "decision_reason",
+   "fieldtype": "Small Text",
+   "label": "Reason"
   }
  ],
  "icon": "plane",
