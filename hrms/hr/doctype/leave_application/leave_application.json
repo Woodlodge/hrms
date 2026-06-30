@@ -1,5 +1,6 @@
 {
  "actions": [],
+ "allow_bulk_edit": 1,
  "allow_import": 1,
  "autoname": "naming_series:",
  "creation": "2013-02-20 11:18:11",
@@ -255,7 +256,7 @@
  "is_submittable": 1,
  "links": [],
  "max_attachments": 3,
- "modified": "2026-01-27 12:02:51.679025",
+ "modified": "2026-06-30 17:04:24.745868",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Leave Application",
