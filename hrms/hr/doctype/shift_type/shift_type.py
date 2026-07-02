@@ -43,14 +43,14 @@ class ShiftType(Document):
 
 	if TYPE_CHECKING:
 		from frappe.types import DF
-		from hrms.hr.doctype.shift_type_break.shift_type_break import ShiftTypeBreak
-		from hrms.hr.doctype.shift_type_rounding.shift_type_rounding import ShiftTypeRounding
+		# from hrms.hr.doctype.shift_type_break.shift_type_break import ShiftTypeBreak
+		# from hrms.hr.doctype.shift_type_rounding.shift_type_rounding import ShiftTypeRounding
 
 		allow_check_out_after_shift_end_time: DF.Int
 		allow_overtime: DF.Check
 		auto_update_last_sync: DF.Check
 		begin_check_in_before_shift_start_time: DF.Int
-		break_times: DF.Table[ShiftTypeBreak]
+		# break_times: DF.Table[ShiftTypeBreak]
 		color: DF.Literal["Blue", "Cyan", "Fuchsia", "Green", "Lime", "Orange", "Pink", "Red", "Violet", "Yellow"]
 		determine_check_in_and_check_out: DF.Literal["Alternating entries as IN and OUT during the same shift", "Strictly based on Log Type in Employee Checkin"]
 		early_exit_grace_period: DF.Int
@@ -66,7 +66,7 @@ class ShiftType(Document):
 		mark_auto_attendance_on_holidays: DF.Check
 		overtime_type: DF.Link | None
 		process_attendance_after: DF.Date | None
-		rounding_rules: DF.Table[ShiftTypeRounding]
+		# rounding_rules: DF.Table[ShiftTypeRounding]
 		start_time: DF.Time
 		working_hours_calculation_based_on: DF.Literal["First Check-in and Last Check-out", "Every Valid Check-in and Check-out"]
 		working_hours_threshold_for_absent: DF.Float
