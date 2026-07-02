@@ -36,6 +36,43 @@ EMPLOYEE_CHUNK_SIZE = 50
 
 
 class ShiftType(Document):
+	# begin: auto-generated types
+	# This code is auto-generated. Do not modify anything in this block.
+
+	from typing import TYPE_CHECKING
+
+	if TYPE_CHECKING:
+		from frappe.types import DF
+		from hrms.hr.doctype.shift_type_break.shift_type_break import ShiftTypeBreak
+		from hrms.hr.doctype.shift_type_rounding.shift_type_rounding import ShiftTypeRounding
+
+		allow_check_out_after_shift_end_time: DF.Int
+		allow_overtime: DF.Check
+		auto_update_last_sync: DF.Check
+		begin_check_in_before_shift_start_time: DF.Int
+		break_times: DF.Table[ShiftTypeBreak]
+		color: DF.Literal["Blue", "Cyan", "Fuchsia", "Green", "Lime", "Orange", "Pink", "Red", "Violet", "Yellow"]
+		determine_check_in_and_check_out: DF.Literal["Alternating entries as IN and OUT during the same shift", "Strictly based on Log Type in Employee Checkin"]
+		early_exit_grace_period: DF.Int
+		enable_auto_attendance: DF.Check
+		enable_break_times: DF.Check
+		enable_early_exit_marking: DF.Check
+		enable_late_entry_marking: DF.Check
+		enable_rounding_rules: DF.Check
+		end_time: DF.Time
+		holiday_list: DF.Link | None
+		last_sync_of_checkin: DF.Datetime | None
+		late_entry_grace_period: DF.Int
+		mark_auto_attendance_on_holidays: DF.Check
+		overtime_type: DF.Link | None
+		process_attendance_after: DF.Date | None
+		rounding_rules: DF.Table[ShiftTypeRounding]
+		start_time: DF.Time
+		working_hours_calculation_based_on: DF.Literal["First Check-in and Last Check-out", "Every Valid Check-in and Check-out"]
+		working_hours_threshold_for_absent: DF.Float
+		working_hours_threshold_for_half_day: DF.Float
+	# end: auto-generated types
+
 	def validate(self):
 		start = get_time(self.start_time)
 		end = get_time(self.end_time)
@@ -233,8 +270,17 @@ class ShiftType(Document):
 		2. Logs are in chronological order
 		"""
 		late_entry = early_exit = False
+
+		break_times = None
+		if self.enable_break_times:
+			break_times = self.break_times
+
+		rounding_rules = None
+		if self.enable_rounding_rules:
+			rounding_rules = self.rounding_rules
+
 		total_working_hours, in_time, out_time = calculate_working_hours(
-			logs, self.determine_check_in_and_check_out, self.working_hours_calculation_based_on
+			logs, self.determine_check_in_and_check_out, self.working_hours_calculation_based_on, break_times, rounding_rules
 		)
 		if (
 			cint(self.enable_late_entry_marking)
