@@ -5,6 +5,7 @@
  "autoname": "field:leave_type_name",
  "creation": "2013-02-21 09:55:58",
  "doctype": "DocType",
+ "documentation": "https://docs.frappe.io/hr/leave-type",
  "document_type": "Setup",
  "engine": "InnoDB",
  "field_order": [
@@ -56,19 +57,22 @@
   {
    "fieldname": "max_leaves_allowed",
    "fieldtype": "Float",
-   "label": "Maximum Leave Allocation Allowed per Leave Period"
+   "label": "Maximum Leave Allocation Allowed per Leave Period",
+   "non_negative": 1
   },
   {
    "description": "Minimum calendar days required since Date of Joining to apply for this leave",
    "fieldname": "applicable_after",
    "fieldtype": "Int",
-   "label": "Allow Leave Application After (Calendar Days)"
+   "label": "Allow Leave Application After (Calendar Days)",
+   "non_negative": 1
   },
   {
    "fieldname": "max_continuous_days_allowed",
    "fieldtype": "Int",
    "in_list_view": 1,
    "label": "Maximum Consecutive Leaves Allowed",
+   "non_negative": 1,
    "oldfieldname": "max_days_allowed",
    "oldfieldtype": "Data"
   },
@@ -122,7 +126,8 @@
    "description": "Calculated in days",
    "fieldname": "expire_carry_forwarded_leaves_after_days",
    "fieldtype": "Int",
-   "label": "Expire Carry Forwarded Leaves (Days)"
+   "label": "Expire Carry Forwarded Leaves (Days)",
+   "non_negative": 1
   },
   {
    "collapsible": 1,
@@ -173,7 +178,8 @@
    "depends_on": "is_carry_forward",
    "fieldname": "maximum_carry_forwarded_leaves",
    "fieldtype": "Float",
-   "label": "Maximum Carry Forwarded Leaves"
+   "label": "Maximum Carry Forwarded Leaves",
+   "non_negative": 1
   },
   {
    "fieldname": "column_break_17",
@@ -192,7 +198,7 @@
   },
   {
    "depends_on": "eval:doc.is_ppl == 1",
-   "description": "For a day of leave taken, if you still pay (say) 50% of the daily salary, then enter 0.50 in this field.",
+   "description": "Fraction of one day's salary that is paid for each day of this leave. For example, 0.60 pays 60% of the daily salary for a leave day, and the remaining 40% is deducted as Leave Without Pay. Enter 1 for fully paid and 0 for fully unpaid.",
    "fieldname": "fraction_of_daily_salary_per_leave",
    "fieldtype": "Float",
    "label": "Fraction of Daily Salary per Leave",
@@ -256,10 +262,10 @@
    "fieldtype": "Column Break"
   }
  ],
- "icon": "fa fa-flag",
+ "icon": "tag",
  "idx": 1,
  "links": [],
- "modified": "2026-05-07 18:26:27.583525",
+ "modified": "2026-10-05 15:00:00.000000",
  "modified_by": "Administrator",
  "module": "HR",
  "name": "Leave Type",

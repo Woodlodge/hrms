@@ -156,7 +156,7 @@ class EmployeeCheckin(Document):
 			)
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_log_based_on_employee_field(
 	employee_field_value: str | int,
 	timestamp: str | datetime,
@@ -181,6 +181,12 @@ def add_log_based_on_employee_field(
 
 	if not employee_field_value or not timestamp:
 		frappe.throw(_("'employee_field_value' and 'timestamp' are required."))
+
+	allowed_employee_fieldnames = {"name", "employee", "attendance_device_id"}
+	if employee_fieldname not in allowed_employee_fieldnames:
+		frappe.throw(
+			_("'employee_fieldname' must be one of {0}.").format(", ".join(allowed_employee_fieldnames))
+		)
 
 	employee = frappe.db.get_values(
 		"Employee",
@@ -212,7 +218,7 @@ def add_log_based_on_employee_field(
 	return doc
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def bulk_fetch_shift(checkins: list[str] | str) -> None:
 	if isinstance(checkins, str):
 		checkins = frappe.json.loads(checkins)

@@ -3,7 +3,21 @@ from datetime import date
 
 import frappe
 from frappe import _
-from frappe.utils import ceil, floor, get_first_day, get_last_day, get_link_to_form, getdate, rounded
+from frappe.model import numeric_fieldtypes
+from frappe.model.create_new import get_new_doc
+from frappe.model.document import Document
+from frappe.query_builder import DocType
+from frappe.query_builder.functions import Extract
+from frappe.utils import (
+	ceil,
+	floor,
+	flt,
+	get_first_day,
+	get_last_day,
+	get_link_to_form,
+	getdate,
+	rounded,
+)
 
 
 def sanitize_expression(string: str | None = None) -> str | None:
@@ -31,6 +45,15 @@ def sanitize_expression(string: str | None = None) -> str | None:
 	return string
 
 
+COMPONENT_PARENTFIELDS = ("earnings", "deductions", "employer_contributions")
+
+COMPONENT_TYPE_TO_PARENTFIELD = {
+	"Earning": "earnings",
+	"Deduction": "deductions",
+	"Employer Contribution": "employer_contributions",
+}
+
+
 COMPONENT_EVAL_GLOBALS = {
 	"int": int,
 	"float": float,
@@ -48,20 +71,32 @@ COMPONENT_EVAL_GLOBALS = {
 }
 
 
+SALARY_COMPONENT_VALUES = "salary_component_values"
+
+
 def get_component_abbr_map() -> dict:
 	"""Cached {salary_component_abbr: 0} map, seeded into the formula eval context
 	so any component abbreviation referenced in a formula resolves (default 0).
 
-	Cache key matches salary_slip.SALARY_COMPONENT_VALUES (shared entry, invalidated
-	on Salary Component save)."""
+	Invalidated on Salary Component save."""
 
 	def _fetch_component_values():
 		return {abbr: 0 for abbr in frappe.get_all("Salary Component", pluck="salary_component_abbr")}
 
-	return frappe.cache().get_value("salary_component_values", generator=_fetch_component_values)
+	return frappe.cache().get_value(SALARY_COMPONENT_VALUES, generator=_fetch_component_values)
 
 
-def get_component_eval_context(employee: str, ssa_as_dict: dict) -> frappe._dict:
+def get_salary_slip_field_defaults() -> dict:
+	defaults = get_new_doc("Salary Slip", as_dict=True)
+
+	for df in frappe.get_meta("Salary Slip").fields:
+		if df.fieldtype in numeric_fieldtypes and defaults.get(df.fieldname) is None:
+			defaults[df.fieldname] = 0
+
+	return defaults
+
+
+def get_component_eval_context(employee: "str | Document | None", ssa_as_dict: dict) -> frappe._dict:
 	"""Build the base evaluation context for salary component formulas.
 
 	Merges component abbreviation defaults, Salary Structure Assignment fields
@@ -70,8 +105,13 @@ def get_component_eval_context(employee: str, ssa_as_dict: dict) -> frappe._dict
 	"""
 	data = frappe._dict()
 	data.update(get_component_abbr_map())
+	data.update(get_salary_slip_field_defaults())
 	data.update(ssa_as_dict)
-	data.update(frappe.get_cached_doc("Employee", employee).as_dict())
+	if employee:
+		employee_doc = (
+			employee if isinstance(employee, Document) else frappe.get_cached_doc("Employee", employee)
+		)
+		data.update(employee_doc.as_dict())
 	return data
 
 
@@ -86,7 +126,7 @@ def _check_attributes(code: str) -> None:
 		if attribute in code:
 			raise SyntaxError(f'Illegal rule {frappe.bold(code)}. Cannot use "{attribute}"')
 
-	BLOCKED_NODES = (ast.NamedExpr,)
+	BLOCKED_NODES = (ast.NamedExpr, ast.Lambda)
 
 	tree = ast.parse(code, mode="eval")
 	for node in ast.walk(tree):
@@ -138,6 +178,85 @@ def throw_error_message(row, error, title, description=None):
 	frappe.throw(message, title=title)
 
 
+BASE_PRECISION = 2
+CTC_SOLVER_TOLERANCE = 0.01
+CTC_SOLVER_BRACKET_EXPANSIONS = 20
+CTC_SOLVER_MAX_ITERATIONS = 60
+
+
+def solve_base_for_ctc(
+	assignment, target_ctc: float, tolerance: float = CTC_SOLVER_TOLERANCE
+) -> tuple[float, float]:
+	from hrms.payroll.doctype.salary_structure_assignment.salary_structure_assignment import (
+		PERIODS_PER_YEAR,
+	)
+
+	target_ctc = flt(target_ctc)
+	if target_ctc <= 0:
+		return 0.0, 0.0
+
+	def ctc_at(base: float) -> float:
+		assignment.base = flt(base, BASE_PRECISION)
+		assignment.calculate_ctc_and_gross()
+		return flt(assignment.ctc)
+
+	frequency = frappe.get_cached_value("Salary Structure", assignment.salary_structure, "payroll_frequency")
+	scale = target_ctc / PERIODS_PER_YEAR.get(frequency, 12)
+
+	low_probe, high_probe = scale / 2, scale
+	low_ctc, high_ctc = ctc_at(low_probe), ctc_at(high_probe)
+	if high_ctc > low_ctc:
+		solved = _solve_on_line(ctc_at, target_ctc, (low_probe, low_ctc), (high_probe, high_ctc), tolerance)
+		return solved or _bisect_base_for_ctc(ctc_at, target_ctc, scale, tolerance)
+
+	base, achieved = _bisect_base_for_ctc(ctc_at, target_ctc, scale, tolerance)
+	if abs(achieved - high_ctc) <= tolerance:
+		base = flt(low_probe, BASE_PRECISION)
+		return base, ctc_at(base)
+
+	solved = _solve_on_line(ctc_at, target_ctc, (base / 2, ctc_at(base / 2)), (base, achieved), tolerance)
+	return solved or (base, ctc_at(base))
+
+
+def _solve_on_line(ctc_at, target_ctc: float, low: tuple, high: tuple, tolerance: float):
+	(low_base, low_ctc), (high_base, high_ctc) = low, high
+	slope = (high_ctc - low_ctc) / (high_base - low_base)
+	if slope <= 0:
+		return None
+
+	candidate = flt(low_base + (target_ctc - low_ctc) / slope, BASE_PRECISION)
+	if candidate < 0:
+		return None
+
+	achieved = ctc_at(candidate)
+	if abs(achieved - target_ctc) <= tolerance:
+		return candidate, achieved
+
+
+def _bisect_base_for_ctc(ctc_at, target_ctc: float, scale: float, tolerance: float) -> tuple[float, float]:
+	low, high = 0.0, scale or 1.0
+
+	for _expansion in range(CTC_SOLVER_BRACKET_EXPANSIONS):
+		if ctc_at(high) >= target_ctc:
+			break
+		low, high = high, high * 2
+	else:
+		base = flt(high, BASE_PRECISION)
+		return base, ctc_at(base)
+
+	for _iteration in range(CTC_SOLVER_MAX_ITERATIONS):
+		if high - low <= tolerance:
+			break
+		mid = (low + high) / 2
+		if ctc_at(mid) < target_ctc:
+			low = mid
+		else:
+			high = mid
+
+	base = flt(high, BASE_PRECISION)
+	return base, ctc_at(base)
+
+
 @frappe.whitelist()
 def get_payroll_settings_for_payment_days() -> dict:
 	return frappe.get_cached_value(
@@ -151,3 +270,39 @@ def get_payroll_settings_for_payment_days() -> dict:
 		],
 		as_dict=True,
 	)
+
+
+def get_conditions(filters):
+	SalarySlip = DocType("Salary Slip")
+	filter_clauses = []
+
+	if filters.get("department"):
+		filter_clauses.append(SalarySlip.department == filters["department"])
+	if filters.get("branch"):
+		filter_clauses.append(SalarySlip.branch == filters["branch"])
+	if filters.get("company"):
+		filter_clauses.append(SalarySlip.company == filters["company"])
+	if filters.get("month"):
+		filter_clauses.append(Extract("month", SalarySlip.start_date) == int(filters["month"]))
+	if filters.get("year"):
+		filter_clauses.append(Extract("year", SalarySlip.start_date) == int(filters["year"]))
+	if filters.get("mode_of_payment"):
+		filter_clauses.append(SalarySlip.mode_of_payment == filters["mode_of_payment"])
+
+	return filter_clauses
+
+
+@frappe.whitelist()
+def get_years() -> str:
+	SalarySlip = DocType("Salary Slip")
+	year_list = (
+		frappe.qb.from_(SalarySlip)
+		.select(Extract("year", SalarySlip.end_date).as_("year"))
+		.distinct()
+		.orderby(Extract("year", SalarySlip.end_date), order=frappe.qb.desc)
+		.run(pluck=True)
+	)
+	if not year_list:
+		year_list = [getdate().year]
+
+	return "\n".join(str(year) for year in year_list)

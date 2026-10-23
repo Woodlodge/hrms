@@ -13,6 +13,11 @@ frappe.ui.form.on("Leave Application", {
 			};
 		});
 		frm.set_query("employee", erpnext.queries.employee);
+		frm.set_query("leave_type", function () {
+			return {
+				filters: [["leave_type_name", "in", frm.allowed_leave_types || []]],
+			};
+		});
 	},
 
 	onload: function (frm) {
@@ -47,9 +52,10 @@ frappe.ui.form.on("Leave Application", {
 	},
 
 	make_dashboard: function (frm) {
-		let leave_details;
-		let lwps;
+		let leave_details = {};
+		let lwps = [];
 
+		frm.allowed_leave_types = [];
 		if (frm.doc.employee) {
 			frappe.call({
 				method: "hrms.hr.doctype.leave_application.leave_application.get_leave_details",
@@ -57,6 +63,7 @@ frappe.ui.form.on("Leave Application", {
 				args: {
 					employee: frm.doc.employee,
 					date: frm.doc.from_date || frm.doc.posting_date,
+					leave_application: frm.is_new() ? null : frm.doc.name,
 				},
 				callback: function (r) {
 					if (!r.exc && r.message["leave_allocation"]) {
@@ -76,15 +83,8 @@ frappe.ui.form.on("Leave Application", {
 			);
 			frm.dashboard.show();
 
-			let allowed_leave_types = Object.keys(leave_details);
 			// lwps should be allowed for selection as they don't have any allocation
-			allowed_leave_types = allowed_leave_types.concat(lwps);
-
-			frm.set_query("leave_type", function () {
-				return {
-					filters: [["leave_type_name", "in", allowed_leave_types]],
-				};
-			});
+			frm.allowed_leave_types = Object.keys(leave_details).concat(lwps);
 		}
 	},
 
@@ -219,6 +219,7 @@ frappe.ui.form.on("Leave Application", {
 					to_date: frm.doc.to_date,
 					leave_type: frm.doc.leave_type,
 					consider_all_leaves_in_the_allocation_period: 1,
+					leave_application: frm.is_new() ? null : frm.doc.name,
 				},
 				callback: function (r) {
 					if (!r.exc && r.message) {
@@ -256,6 +257,7 @@ frappe.ui.form.on("Leave Application", {
 					to_date: frm.doc.to_date,
 					half_day: frm.doc.half_day,
 					half_day_date: frm.doc.half_day_date,
+					leave_application: frm.is_new() ? null : frm.doc.name,
 				},
 				callback: function (r) {
 					if (r && r.message) {
@@ -273,6 +275,7 @@ frappe.ui.form.on("Leave Application", {
 				method: "hrms.hr.doctype.leave_application.leave_application.get_leave_approver",
 				args: {
 					employee: frm.doc.employee,
+					leave_application: frm.is_new() ? null : frm.doc.name,
 				},
 				callback: function (r) {
 					if (r && r.message) {

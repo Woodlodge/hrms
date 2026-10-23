@@ -141,6 +141,7 @@ class EmployeeHoursReport:
 				TimesheetDetail.project.as_("project"),
 			)
 			.where(Timesheet.employee.isnotnull())
+			.where(Timesheet.docstatus == 1)
 			.where(Timesheet.start_date[self.from_date : self.to_date])
 			.where(Timesheet.end_date[self.from_date : self.to_date])
 		)
@@ -168,12 +169,22 @@ class EmployeeHoursReport:
 				self.stats_by_employee[emp]["non_billed_hours"] += flt(hours, 2)
 
 	def set_employee_department_and_name(self):
-		for emp in self.stats_by_employee:
-			emp_name = frappe.db.get_value("Employee", emp, "employee_name")
-			emp_dept = frappe.db.get_value("Employee", emp, "department")
+		if not self.stats_by_employee:
+			return
 
-			self.stats_by_employee[emp]["department"] = emp_dept
-			self.stats_by_employee[emp]["employee_name"] = emp_name
+		employee_details = {
+			employee["name"]: employee
+			for employee in frappe.get_all(
+				"Employee",
+				filters={"name": ["in", list(self.stats_by_employee)]},
+				fields=["name", "employee_name", "department"],
+			)
+		}
+
+		for emp, stats in self.stats_by_employee.items():
+			employee = employee_details.get(emp)
+			stats["employee_name"] = employee.get("employee_name") if employee else None
+			stats["department"] = employee.get("department") if employee else None
 
 	def calculate_utilizations(self):
 		TOTAL_HOURS = flt(self.standard_working_hours * self.day_span, 2)

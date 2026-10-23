@@ -6,7 +6,7 @@ from pypika import CustomFunction
 import frappe
 from frappe import _
 from frappe.query_builder.functions import Avg
-from frappe.utils import cint, flt
+from frappe.utils import cint, flt, has_common
 from frappe.utils.nestedset import NestedSet
 
 from hrms.hr.doctype.appraisal_cycle.appraisal_cycle import validate_active_appraisal_cycle
@@ -53,7 +53,7 @@ class Goal(NestedSet):
 
 		validate_active_employee(self.employee)
 		self.validate_parent_fields()
-		self.validate_from_to_dates(self.start_date, self.end_date)
+		self.validate_from_to_dates("start_date", "end_date")
 		self.validate_progress()
 		self.set_status()
 
@@ -166,6 +166,9 @@ def get_children(doctype: str, parent: str, is_root: bool = False, **filters) ->
 	query_filters = [["status", "!=", "Archived"]]
 	query_or_filters = []
 
+	if filters.get("company"):
+		query_filters.append(["company", "=", filters.get("company")])
+
 	if filters.get("employee"):
 		query_filters.append(["employee", "=", filters.get("employee")])
 
@@ -225,9 +228,26 @@ def _update_goal_completion_status(goals: list[dict]) -> list[dict]:
 	return goals
 
 
-@frappe.whitelist()
+HR_ROLES = ("System Manager", "HR Manager", "HR User")
+
+
+def validate_goal_access(employee: str) -> None:
+	if has_common(HR_ROLES, frappe.get_roles()):
+		return
+
+	is_own_goal = frappe.db.get_value("Employee", employee, "user_id") == frappe.session.user
+	if not is_own_goal:
+		frappe.throw(
+			_("You are not permitted to update another employee's goal."),
+			frappe.PermissionError,
+			title=_("Not Permitted"),
+		)
+
+
+@frappe.whitelist(methods=["POST"])
 def update_progress(progress: float, goal: str) -> None:
 	goal = frappe.get_doc("Goal", goal)
+	validate_goal_access(goal.employee)
 	goal.progress = progress
 	goal.flags.ignore_mandatory = True
 	goal.save()
@@ -235,7 +255,7 @@ def update_progress(progress: float, goal: str) -> None:
 	return goal
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def update_status(status: str, goals: str | list) -> None:
 	if isinstance(goals, str):
 		import json
@@ -244,6 +264,7 @@ def update_status(status: str, goals: str | list) -> None:
 
 	for goal in goals:
 		goal = frappe.get_doc("Goal", goal)
+		validate_goal_access(goal.employee)
 		goal.status = status
 		if status == "Completed":
 			goal.progress = 100
@@ -253,7 +274,7 @@ def update_status(status: str, goals: str | list) -> None:
 	return goals
 
 
-@frappe.whitelist()
+@frappe.whitelist(methods=["POST"])
 def add_tree_node():
 	from frappe.desk.treeview import make_tree_args
 

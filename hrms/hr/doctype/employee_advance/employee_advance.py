@@ -60,6 +60,7 @@ class EmployeeAdvance(Document):
 
 	def validate(self):
 		validate_active_employee(self.employee)
+		self.validate_advance_amount()
 		self.validate_advance_account_currency()
 		self.validate_advance_account_type()
 		self.set_status()
@@ -111,6 +112,10 @@ class EmployeeAdvance(Document):
 	def publish_update(self):
 		employee_user = frappe.db.get_value("Employee", self.employee, "user_id", cache=True)
 		hrms.refetch_resource("hrms:employee_advance_balance", employee_user)
+
+	def validate_advance_amount(self):
+		if flt(self.advance_amount) <= 0:
+			frappe.throw(_("Advance Amount must be greater than zero."))
 
 	def validate_advance_account_type(self):
 		if not self.advance_account:
@@ -323,8 +328,20 @@ def make_return_entry(
 	advance_account: str,
 	currency: str,
 	mode_of_payment: str | None = None,
+	bank_account: str | None = None,
 ) -> dict:
-	bank_cash_account = get_same_currency_bank_cash_account(company, currency, mode_of_payment)
+	bank_cash_account = get_same_currency_bank_cash_account(company, currency, mode_of_payment, bank_account)
+
+	if not (bank_cash_account.get("account") or bank_cash_account.get("name")):
+		frappe.msgprint(
+			_(
+				"Couldn't automatically pick a Bank/Cash Account for this return. Please set one in the"
+				" Accounting Entries below, or set a Default Cash Account in the {0} to avoid this next"
+				" time."
+			).format(get_link_to_form("Company", company + "#accounts_tab", _("Company"))),
+			title=_("Bank/Cash Account Not Set"),
+			indicator="orange",
+		)
 
 	advance_account_currency = frappe.db.get_value("Account", advance_account, "account_currency")
 
@@ -367,13 +384,17 @@ def make_return_entry(
 	return je.as_dict()
 
 
-def get_same_currency_bank_cash_account(company, currency, mode_of_payment=None):
+def get_same_currency_bank_cash_account(company, currency, mode_of_payment=None, account=None):
 	company_currency = erpnext.get_company_currency(company)
 	if currency == company_currency:
-		return get_default_bank_cash_account(company, account_type="Cash", mode_of_payment=mode_of_payment)
+		return get_default_bank_cash_account(
+			company,
+			account_type="Cash",
+			mode_of_payment=None if account else mode_of_payment,
+			account=account,
+		)
 
-	account = None
-	if mode_of_payment:
+	if not account and mode_of_payment:
 		from erpnext.accounts.doctype.sales_invoice.sales_invoice import get_bank_cash_account
 
 		account = get_bank_cash_account(mode_of_payment, company).get("account")
@@ -411,3 +432,28 @@ def get_voucher_type(mode_of_payment=None):
 			voucher_type = "Bank Entry"
 
 	return voucher_type
+
+
+@frappe.whitelist()
+def get_employee_advance_return(employee_advance: str):
+	frappe.has_permission("Employee Advance", ptype="read", doc=employee_advance, throw=True)
+
+	AdditionalSalary = frappe.qb.DocType("Additional Salary")
+	return_entries = (
+		frappe.qb.from_(AdditionalSalary)
+		.select(Sum(AdditionalSalary.amount).as_("total_return_scheduled"))
+		.where(
+			(AdditionalSalary.ref_doctype == "Employee Advance")
+			& (AdditionalSalary.ref_docname == employee_advance)
+			& (AdditionalSalary.docstatus == 1)
+		)
+	).run(as_dict=True)
+
+	total_return_scheduled = flt(return_entries[0].total_return_scheduled)
+	already_returned = flt(frappe.db.get_value("Employee Advance", employee_advance, "return_amount"))
+	pending_scheduled = max(0, total_return_scheduled - already_returned)
+
+	return {
+		"total_return_scheduled": pending_scheduled,
+		"has_return_scheduled": bool(pending_scheduled),
+	}

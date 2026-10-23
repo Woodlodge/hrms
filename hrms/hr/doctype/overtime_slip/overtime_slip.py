@@ -119,7 +119,7 @@ class OvertimeSlip(Document):
 				)
 			)
 
-	@frappe.whitelist()
+	@frappe.whitelist(methods=["POST"])
 	def get_emp_and_overtime_details(self):
 		records = self.get_attendance_records()
 		if len(records):
@@ -372,13 +372,10 @@ class OvertimeSlip(Document):
 		return amount
 
 	def get_holiday_map(self):
-		from erpnext.setup.doctype.employee.employee import get_holiday_list_for_employee
+		from hrms.utils.holiday_list import get_holiday_dates_between_range
 
-		from hrms.utils.holiday_list import get_holiday_dates_between
-
-		holiday_list = get_holiday_list_for_employee(self.employee)
-		holiday_dates = get_holiday_dates_between(
-			holiday_list, self.start_date, self.end_date, select_weekly_off=True, as_dict=True
+		holiday_dates = get_holiday_dates_between_range(
+			self.employee, self.start_date, self.end_date, select_weekly_offs=True, as_dict=True
 		)
 
 		holiday_date_map = {}
@@ -470,9 +467,15 @@ def create_overtime_slips_for_employees(employees, args):
 	count = 0
 	errors = []
 	for emp in employees:
-		args.update({"doctype": "Overtime Slip", "employee": emp})
+		emp_args = args.copy()
+		relieving_date = frappe.db.get_value("Employee", emp, "relieving_date")
+		relieving_date = getdate(relieving_date) if relieving_date else None
+		if relieving_date and relieving_date < getdate(emp_args.get("end_date")):
+			emp_args["start_date"] = getdate(emp_args.get("start_date"))
+			emp_args["end_date"] = relieving_date
+		emp_args.update({"doctype": "Overtime Slip", "employee": emp})
 		try:
-			frappe.get_doc(args).get_emp_and_overtime_details()
+			frappe.get_doc(emp_args).get_emp_and_overtime_details()
 			count += 1
 		except Exception as e:
 			frappe.clear_last_message()
@@ -523,7 +526,7 @@ def submit_overtime_slips_for_employees(overtime_slips, payroll_entry):
 		error_list_html = "".join(f"<li>{err}</li>" for err in errors)
 		frappe.msgprint(
 			title=_("Overtime Slip Submission Failed"),
-			msg=_(f"<ul>{error_list_html}</ul>"),
+			msg=f"<ul>{error_list_html}</ul>",
 			indicator="red",
 		)
 

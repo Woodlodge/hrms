@@ -9,7 +9,7 @@
 						<div class="flex flex-row items-center">
 							<Button
 								variant="ghost"
-								class="!pl-0 hover:bg-white"
+								class="!ps-0 hover:bg-white"
 								@click="router.back()"
 							>
 								<FeatherIcon name="chevron-left" class="h-5 w-5" />
@@ -124,7 +124,7 @@
 							const [label, fieldtype] = getFieldInfo(field)
 							return {
 								fieldname: field,
-								value: employeeDoc.doc[field],
+								value: getFieldValue(field),
 								label: label,
 								fieldtype: fieldtype,
 							}
@@ -138,7 +138,7 @@
 </template>
 
 <script setup>
-import { computed, inject, ref, onMounted, onBeforeUnmount } from "vue"
+import { computed, inject, ref, watch, onMounted, onBeforeUnmount } from "vue"
 import { useRouter } from "vue-router"
 import { IonPage, IonContent } from "@ionic/vue"
 import { FeatherIcon, createDocumentResource, createResource, toast } from "frappe-ui"
@@ -244,6 +244,19 @@ const employeeDoc = createDocumentResource({
 	},
 })
 
+const reportsToName = createResource({
+	url: "hrms.api.get_reports_to_employee_name",
+})
+
+watch(
+	() => employeeDoc.doc?.reports_to,
+	(reports_to) => {
+		if (reports_to) {
+			reportsToName.submit({ employee: reports_to })
+		}
+	}
+)
+
 const employeeDocType = createResource({
 	url: "hrms.api.get_doctype_fields",
 	params: { doctype: DOCTYPE },
@@ -257,11 +270,21 @@ const getFieldInfo = (fieldname) => {
 	return [__(field?.label, null, "Employee"), field?.fieldtype]
 }
 
+const getFieldValue = (fieldname) => {
+	if (fieldname === "employee_number" && !employeeDoc.doc[fieldname]) {
+		return employeeDoc.doc["name"]
+	}
+	if (fieldname === "reports_to") {
+		return reportsToName.data || employeeDoc.doc[fieldname]
+	}
+	return employeeDoc.doc[fieldname]
+}
+
 const logout = async () => {
 	try {
 		await session.logout.submit()
 	} catch (e) {
-		const msg = "An error occurred while attempting to log out!"
+		const msg = __("An error occurred while attempting to log out!")
 		console.error(msg, e)
 		showErrorAlert(msg)
 	}
